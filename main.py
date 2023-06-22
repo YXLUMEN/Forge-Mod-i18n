@@ -1,15 +1,12 @@
-import multiprocessing
 import os
 import re
 import shutil
 import zipfile
 import json
 import argparse
-import multiprocessing.pool
-import queue
+from concurrent.futures import ProcessPoolExecutor
 
 parsers = argparse.ArgumentParser()
-parsers.add_argument('-input', required=False, help='输入模组目录')
 parsers.add_argument('-output', required=False, help='输出结果目录')
 parsers.add_argument('-lang', required=False, help='目标语言')
 parsers.add_argument('-process', default=2, type=int, required=False, help='进程数')
@@ -21,96 +18,111 @@ parsers.add_argument(
 class LangTransHelper:
     langMix = False
     count = 0
-    _pType = 1
-    _modsQueue = queue.Queue(maxsize=6)
 
-    # _modsFile = queue.Queue(maxsize=6)
-
-    def __int__(self, input_dir: str, output_dir: str, trans: str, max_process: int):
-        self.input_dir = input_dir
+    def __int__(self, output_dir: str, trans: str):
         self.output_dir = output_dir
         self.lang = trans
-        self._pool = multiprocessing.Pool(processes=max_process)
 
-    def main(self, p_type: str):
-        self._pType = p_type
+    def _zip_reader(self, target, file, mod_id):
+        if file == f'assets/{mod_id}/lang/en_us.json':
+            byte = target.read(file)
+            with open(f'{self.output_dir}/has_trans/{mod_id}/en_us.json', 'wb') as f:
+                f.write(byte)
+        elif file == f'assets/{mod_id}/lang/{self.lang}.json':
+            byte = target.read(file)
+            with open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'wb') as f:
+                f.write(byte)
 
-        for i in self.scaner_file(self.input_dir):
-            self.__deploy(i)
-        self._modsQueue.join()
-
-    def __deploy(self, in_object: str):
-        if not zipfile.is_zipfile(in_object):
-            self._pool.apply_async(func=self.get_mod_id, args=(in_object,))
-            self._pool.apply_async(func=self.__extract_lang_files)
-        elif os.path.isdir(in_object) and self._pType == '2':
-            self._pool.apply_async(self.__read_lang_file_from_folder, args=(in_object,))
-        # self.__mix_language_files(mod_id)
-
-    # get mod id from jar(zip)
-    def get_mod_id(self, zip_file: str):
-        """
-
-        :param zip_file:
-        :return:
-        """
-        # create zip object
+    # extract lang files from jar(zip)
+    def extract_mod_lang(self, zip_file):
+        # semaphore
         try:
             zip_f = zipfile.ZipFile(zip_file, 'r')
         except Exception as e:
-            print(f'解压文件错误: {e} -> ' + zip_file.split('\\')[1])
+            print(f'\033[31m解压文件错误:\033[0m {e} -> ' + zip_file.split('\\')[-1])
             return
         # get mod id
         try:
             mod_id = zip_f.read('META-INF/mods.toml')
             mod_id = str(mod_id)
             mod_id = re.findall('modId.?=.?"(.*?)"', mod_id)[0]
-        except KeyError:
-            return
         except Exception as e:
-            print(f'未识别的mod或资源包: {e} -> ' + zip_file.split('\\')[1])
+            print(f'\033[33m未识别的mod:\033[0m {e} -> ' + zip_file.split('\\')[-1])
             return
-
-        mod = mod_id, zip_f
-        self._modsQueue.put(mod, block=True)
-        zip_f.close()
-        return mod_id
-
-    # extract lang files from jar(zip)
-    def __extract_lang_files(self):
-        # semaphore
-        en = False
-        zh = False
-        mod_id, zip_f = self._modsQueue.get(block=True)
 
         if not os.access(f'{self.output_dir}/has_trans/{mod_id}/', os.W_OK):
             os.makedirs(f'{self.output_dir}/has_trans/{mod_id}/')
         # extract target lang json file and en_us.json
         for file in zip_f.namelist():
-            if file == f'assets/{mod_id}/lang/en_us.json':
-                byte = zip_f.read(file)
-                with open(f'{self.output_dir}/has_trans/{mod_id}/en_us.json', 'wb') as f:
-                    f.write(byte)
-                en = True
-            elif file == f'assets/{mod_id}/lang/{self.lang}.json':
-                byte = zip_f.read(file)
-                with open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'wb') as f:
-                    f.write(byte)
-                zh = True
+            self._zip_reader(zip_f, file, mod_id)
+
         zip_f.close()
 
-        self.__sort_files(mod_id, en, zh)
+    def read_resource_pack_lang(self, file: str):
+        mod = None
+        # resource pack usually is a zip file
+        if zipfile.is_zipfile(file):
+            try:
+                target = zipfile.ZipFile(file, 'r')
+            except Exception as e:
+                print(f'\033[31m解压文件错误:\033[0m {e} -> ' + file.split('\\')[-1])
+                return
+            # check pack.mcmeta
+            try:
+                target.read('pack.mcmeta')
+            except Exception as e:
+                print(f'\033[33m未找到pack.mcmeta:\033[0m {e} -> ' + file.split('\\')[-1])
+                return
+            for lang_json in target.namelist():
+                # mod id in pack
+                if lang_json.split('/')[0] == 'assets' and len(lang_json.split('/')) == 2:
+                    mod = lang_json.split('/')[-1]
+                self._zip_reader(target, lang_json, mod)
+        # sometime resource pack is a folder
+        elif os.path.isdir(file):
+            if not os.access(file + '/pack.mcmeta', os.R_OK):
+                print('未找到pack.mcmeta -> ' + file.split('\\')[-1])
+                return
+            # get all mod folder
+            mod_folder = self.scaner_file(f'{file}/assets')
+            # process each mod to copy lang files if it's existence
+            for each_mod in mod_folder:
+                self._read_resource_pack_part_one(each_mod)
+        # maybe it's nothing
+        else:
+            print('\033[31m未解析的资源包\033[0m -> ' + file.split('\\')[-1])
+            return
 
-    def __read_lang_file_from_folder(self, folder: str):
+    def _read_resource_pack_part_one(self, each_mod):
+        mod_id = each_mod.split('\\')[-1]
         try:
-            print('111')
+            if not os.access(f'{each_mod}/lang/{self.lang}.json', os.R_OK):
+                return
+            if not os.access(f'{self.output_dir}/has_trans/{mod_id}', os.W_OK):
+                os.makedirs(f'{self.output_dir}/has_trans/{mod_id}')
+            shutil.copy(
+                os.path.abspath(f'{each_mod}/lang/{self.lang}.json'),
+                f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json')
         except Exception as e:
-            print(e)
+            print(f'{e} -> {mod_id}')
+
+    # TODO
+    def replace_authority_lang(self):
+
+        ...
 
     # sort files
-    def __sort_files(self, dir_name: str, en: bool, zh: bool):
+    def sort_files(self, dir_name: str):
         if dir_name is None:
             return
+        en = False
+        zh = False
+
+        # has lang
+        if os.access(dir_name + '/en_us.json', os.R_OK):
+            en = True
+        if os.access(dir_name + f'/{self.lang}.json', os.R_OK):
+            zh = True
         # create path
         if not os.access(f'{self.output_dir}/need_{self.lang}/', os.W_OK):
             os.makedirs(f'{self.output_dir}/need_{self.lang}/')
@@ -119,116 +131,132 @@ class LangTransHelper:
         if not os.access(f'{self.output_dir}/no_lang_files/', os.W_OK):
             os.makedirs(f'{self.output_dir}/no_lang_files/')
         # sort those files
-        origin_file_dir = f'{self.output_dir}/has_trans/{dir_name}/'
         if not en and not zh:
-            shutil.rmtree(f'{self.output_dir}/no_lang_files/{dir_name}', ignore_errors=True)
-            shutil.move(origin_file_dir, f'{self.output_dir}/no_lang_files/')
+            shutil.move(dir_name, f'{self.output_dir}/no_lang_files/')
         elif not en:
-            shutil.rmtree(f'{self.output_dir}/no_en_us/', ignore_errors=True)
-            shutil.move(origin_file_dir, f'{self.output_dir}/no_en_us/')
+            shutil.move(dir_name, f'{self.output_dir}/no_en_us/')
         elif not zh:
-            shutil.rmtree(f'{self.output_dir}/need_{self.lang}/{dir_name}', ignore_errors=True)
-            shutil.move(origin_file_dir, f'{self.output_dir}/need_{self.lang}/')
+            shutil.move(dir_name, f'{self.output_dir}/need_{self.lang}/')
 
-    def scaner_file(self, url: str):
-        """
-        :param url:
-        :return:
-        返回输入地址下的所以文件名
-        """
-
-        self.count = 0
-        files = os.listdir(url)
-        if len(files) <= 0:
-            print('目录为空')
-        result = []
-        for f in files:
-            result.append(os.path.join(url, f))
-            self.count += 1
-        return result
-
-    def __mix_language_files(self, mod_id):
+    def mix_language_files(self, mod_id):
         if not self.langMix:
             return
         # lang files is correct
         if mod_id is None:
             return
-        if not os.access(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', os.R_OK):
-            print(f'无中文语言文件或文件不可读 -> {mod_id}')
-            return
         # load in json
-        en_file = open(f'{self.output_dir}/has_trans/{mod_id}/en_us.json', 'rb')
-        en_file = json.load(en_file)
-        zh_file = open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'rb')
-        zh_file = json.load(zh_file)
+        try:
+            en_file = open(f'{mod_id}/en_us.json', 'rb')
+            en_file = json.load(en_file)
+            zh_file = open(f'{mod_id}/{self.lang}.json', 'rb')
+            zh_file = json.load(zh_file)
+        except FileNotFoundError as e:
+            print(f'mixLang: 处理的 -> {mod_id} 没有: ' + str(e).split('/')[-1])
+            return
         # mix two lang files in to mix.json
         for key, value in en_file.items():
             if key in zh_file.keys():
                 en_file[key] = zh_file[key]
-        mix_file = open(f'{self.output_dir}/has_trans/{mod_id}/mix.json', 'w', encoding='utf-8')
+        mix_file = open(f'{mod_id}/mix.json', 'w', encoding='utf-8')
         json.dump(en_file, mix_file, ensure_ascii=False, indent=4)
 
+    def scaner_file(self, url: str | list | tuple) -> list[str]:
+        """
+        :param url:
+        :return:
+        返回输入地址下的所以文件名
+        """
+        if type(url) == str:
+            url = url.split()
+        self.count = 0
+        result = []
+        for each in url:
+            files = os.listdir(each)
+            if len(files) <= 0:
+                print('目录为空 -> ' + each)
+            for f in files:
+                result.append(os.path.join(each, f))
+                self.count += 1
+        return result
 
+
+# default params
 def initialization_params(args):
     # Default
-    input_dir = './input'
     output_dir = './output'
     lang_target = 'zh_cn'
     # read settings
     if os.access('./conf.json', os.R_OK):
         with open('./conf.json', 'r', encoding='utf-8') as F:
             ini = json.load(F)
-        input_dir = ini['input'] if ini['input'] is not None else input_dir
         output_dir = ini['output'] if ini['output'] is not None else output_dir
         lang_target = ini['lang'] if ini['lang'] is not None else lang_target
     # save settings
     if args.save:
         ini = {
-            'input': args.input,
             'output': args.output,
-            'lang': args.lang,
+            'lang': args.helper,
             'process': args.process
         }
         with open('./conf.json', 'w', encoding='utf-8') as F:
             json.dump(ini, F)
 
     # params
-    if args.input is not None:
-        input_dir = args.input
     if args.output is not None:
         output_dir = args.output
     if args.lang is not None:
         lang_target = args.lang
-    # create path
-    if not os.path.exists(input_dir):
-        os.mkdir(input_dir)
-    if not os.access(output_dir, os.R_OK):
-        os.mkdir(output_dir)
 
-    return input_dir, output_dir, lang_target
+    return 'input_dir', output_dir, lang_target
 
 
 if __name__ == '__main__':
     arg = parsers.parse_args()
     inputDir, outputDir, langTarget = initialization_params(arg)
-    # pool = Pool(processes=arg.process)
+    # create path
+    if not os.path.exists('input'):
+        os.mkdir('input')
+    if not os.access(outputDir, os.R_OK):
+        os.mkdir(outputDir)
     # setting
-    lang = LangTransHelper()
-    lang.__int__(inputDir, outputDir, langTarget, arg.process)
+    helper = LangTransHelper()
+    helper.__int__(outputDir, langTarget)
 
     # start
     while True:
+        pool = ProcessPoolExecutor(max_workers=arg.process)
         # 提示信息
         print(
-            '-' * 40 +
+            '-' * 45 +
             '\n1.仅输出官方中英文语言文件  2.仅输出资源包中文和英文语言文件' +
-            '\n3.资源包替换官方中文  4.官方与资源包互补' +
+            '\n3.资源包替换官方中文' +
             '\nq.退出\n' +
-            '-' * 40)
-        pType = input('\r\nInput your select:  ')
+            '-' * 45)
+        pType = input('\r\n\033[1mInput your select:\033[0m  ')
         if pType == 'q':
             break
-        if input('是否将语言混合(y/n):  ') == 'y':
-            lang.langMix = True
-        lang.main(pType)
-        print(f'\r\n分析完成,共{lang.count}个模组')
+        if pType.lower() not in ('1', '2', 'q'):
+            print('\033[35m无此选项\033[0m')
+            continue
+        if input('\033[1m是否将语言混合(y/n):\033[0m  ') == 'y':
+            helper.langMix = True
+        else:
+            helper.langMix = False
+        # clean dir trees
+        shutil.rmtree(outputDir + '/', ignore_errors=True)
+        if pType == '1':
+            for i in helper.scaner_file('input/mods'):
+                extractProcess = pool.submit(helper.extract_mod_lang, i)
+        elif pType == '2':
+            for i in helper.scaner_file('input/resource'):
+                folderProcess = pool.submit(helper.read_resource_pack_lang, i)
+        elif pType == '3':
+            for i in helper.scaner_file(('input/mods', 'input/resource')):
+                ...
+
+        pool.shutdown(wait=True)
+        if not os.access(f'{outputDir}/has_trans/', os.W_OK):
+            exit('程序或许未正常运行,请检查输入输出文件夹是否正常')
+        for i in helper.scaner_file(f'{outputDir}/has_trans/'):
+            helper.mix_language_files(i)
+            helper.sort_files(i)
