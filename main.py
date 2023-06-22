@@ -17,7 +17,6 @@ parsers.add_argument(
 
 class LangTransHelper:
     langMix = False
-    count = 0
 
     def __int__(self, output_dir: str, trans: str):
         self.output_dir = output_dir
@@ -57,6 +56,7 @@ class LangTransHelper:
             self._zip_reader(zip_f, file, mod_id)
 
         zip_f.close()
+        return mod_id
 
     def read_resource_pack_lang(self, file: str):
         mod = None
@@ -93,6 +93,7 @@ class LangTransHelper:
             print('\033[31m未解析的资源包\033[0m -> ' + file.split('\\')[-1])
             return
 
+    # read_resource_pack_lang's part TO make main function more beautiful
     def _read_resource_pack_part_one(self, each_mod):
         mod_id = each_mod.split('\\')[-1]
         try:
@@ -106,10 +107,26 @@ class LangTransHelper:
         except Exception as e:
             print(f'{e} -> {mod_id}')
 
-    # TODO
-    def replace_authority_lang(self):
-
-        ...
+    # func 1
+    def replace_authority_lang(self, first_list: list, second_list: list):
+        for k in second_list:
+            self.read_resource_pack_lang(k)
+        os.rename(f'{self.output_dir}/has_trans', f'{self.output_dir}/temp')
+        for k in first_list:
+            mod_id = self.extract_mod_lang(k)
+            try:
+                origin = open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'rb')
+                origin = json.load(origin)
+                after = open(f'{self.output_dir}/temp/{mod_id}/{self.lang}.json', 'rb')
+                after = json.load(after)
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                print(f'func1 出现错误: {e}')
+                continue
+            origin.update(after)
+            latest = open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'w', encoding='utf-8')
+            json.dump(origin, latest, ensure_ascii=False, indent=4)
 
     # sort files
     def sort_files(self, dir_name: str):
@@ -138,6 +155,8 @@ class LangTransHelper:
         elif not zh:
             shutil.move(dir_name, f'{self.output_dir}/need_{self.lang}/')
 
+    # mix the lang files
+    # func2
     def mix_language_files(self, mod_id):
         if not self.langMix:
             return
@@ -153,6 +172,9 @@ class LangTransHelper:
         except FileNotFoundError as e:
             print(f'mixLang: 处理的 -> {mod_id} 没有: ' + str(e).split('/')[-1])
             return
+        except Exception as e:
+            print(f'func2 出现错误: {e}')
+            return
         # mix two lang files in to mix.json
         for key, value in en_file.items():
             if key in zh_file.keys():
@@ -160,7 +182,8 @@ class LangTransHelper:
         mix_file = open(f'{mod_id}/mix.json', 'w', encoding='utf-8')
         json.dump(en_file, mix_file, ensure_ascii=False, indent=4)
 
-    def scaner_file(self, url: str | list | tuple) -> list[str]:
+    @staticmethod
+    def scaner_file(url: str | list | tuple) -> list[str]:
         """
         :param url:
         :return:
@@ -168,7 +191,6 @@ class LangTransHelper:
         """
         if type(url) == str:
             url = url.split()
-        self.count = 0
         result = []
         for each in url:
             files = os.listdir(each)
@@ -176,7 +198,6 @@ class LangTransHelper:
                 print('目录为空 -> ' + each)
             for f in files:
                 result.append(os.path.join(each, f))
-                self.count += 1
         return result
 
 
@@ -235,28 +256,34 @@ if __name__ == '__main__':
         pType = input('\r\n\033[1mInput your select:\033[0m  ')
         if pType == 'q':
             break
-        if pType.lower() not in ('1', '2', 'q'):
+        if pType.lower() not in ('1', '2', '3', 'q'):
             print('\033[35m无此选项\033[0m')
             continue
         if input('\033[1m是否将语言混合(y/n):\033[0m  ') == 'y':
             helper.langMix = True
         else:
             helper.langMix = False
+        print('')
         # clean dir trees
         shutil.rmtree(outputDir + '/', ignore_errors=True)
         if pType == '1':
             for i in helper.scaner_file('input/mods'):
-                extractProcess = pool.submit(helper.extract_mod_lang, i)
+                pool.submit(helper.extract_mod_lang, i)
         elif pType == '2':
             for i in helper.scaner_file('input/resource'):
-                folderProcess = pool.submit(helper.read_resource_pack_lang, i)
+                pool.submit(helper.read_resource_pack_lang, i)
         elif pType == '3':
-            for i in helper.scaner_file(('input/mods', 'input/resource')):
-                ...
+            firstList = helper.scaner_file('input/mods')
+            secondList = helper.scaner_file('input/resource')
+            pool.submit(helper.replace_authority_lang, firstList, secondList)
 
         pool.shutdown(wait=True)
+        shutil.rmtree(f'{outputDir}/temp', ignore_errors=True)
         if not os.access(f'{outputDir}/has_trans/', os.W_OK):
             exit('程序或许未正常运行,请检查输入输出文件夹是否正常')
+        count = 0
         for i in helper.scaner_file(f'{outputDir}/has_trans/'):
             helper.mix_language_files(i)
             helper.sort_files(i)
+            count += 1
+        print(f'\n处理完成,共 \033[32m{count}\033[0m 个项目')
