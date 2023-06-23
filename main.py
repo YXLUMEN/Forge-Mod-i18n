@@ -8,12 +8,24 @@ from time import sleep
 from concurrent.futures import ProcessPoolExecutor
 
 parsers = argparse.ArgumentParser()
-parsers.add_argument('-output', required=False, help='输出结果目录')
-parsers.add_argument('-lang', required=False, help='目标语言')
-parsers.add_argument('-process', type=int, required=False, help='进程数')
+parsers.add_argument('-op', '--output', required=False, help='输出结果目录')
+parsers.add_argument('-l', '--lang', required=False, help='目标语言')
+parsers.add_argument('-p', '--process', type=int, required=False, help='进程数')
 parsers.add_argument(
-    '-save', default=0, type=bool, required=False,
+    '-s', '--save', default=False, action='store_true', required=False,
     help='是否保存配置;当保存配置时,下次运行将依照配置执行,直到输入参数或更改配置')
+
+count = 2
+while count:
+    try:
+        import json5
+        break
+    except Exception as E:
+        print(E)
+        os.system('pip install json5')
+        count -= 1
+del count
+del E
 
 
 class LangTransHelper:
@@ -182,10 +194,20 @@ class LangTransHelper:
             zh_file = open(f'{mod_id}/{self.lang}.json', 'rb')
             zh_file = json.load(zh_file)
         except FileNotFoundError as e:
-            print(f'mixLang: 处理的 -> {mod_id} 没有: ' + str(e).split('/')[-1])
+            print(f'mixLang: 处理的 -> ' + mod_id.split('/')[-1] + ' 没有: ' + str(e).split('/')[-1])
             return
+        # use json5
+        except json.decoder.JSONDecodeError:
+            print('\033[33mMod的语言文件中包含注释\033[0m -> ' + mod_id.split('/')[-1])
+            try:
+                en_file = open(f'{mod_id}/en_us.json', 'rb')
+                en_file = json5.load(en_file)
+                zh_file = open(f'{mod_id}/{self.lang}.json', 'rb')
+                zh_file = json5.load(zh_file)
+            except FileNotFoundError:
+                return
         except Exception as e:
-            print(f'func2 出现错误: {e}')
+            print(f'func2 \033[31m出现错误:\033[0m {e} -> ' + mod_id.split('/')[-1])
             return
         # mix two lang files in to mix.json
         en_file.update(zh_file)
@@ -223,13 +245,14 @@ def initialization_params(args):
             ini = json.load(F)
         output_dir = ini['output'] if ini['output'] is not None else output_dir
         lang_target = ini['lang'] if ini['lang'] is not None else lang_target
-        max_process = ini['process'] if ini['process'] is not None else max_process
-    # save settings
+        if ini['process'] is not None and ini['process'] >= 1:
+            max_process = ini['process']
+            # save settings
     if args.save:
         ini = {
             'output': args.output,
-            'lang': args.helper,
-            'process': args.process
+            'lang': args.lang,
+            'process': args.process if args.process >= 1 else 2
         }
         with open('./conf.json', 'w', encoding='utf-8') as F:
             json.dump(ini, F)
@@ -240,7 +263,7 @@ def initialization_params(args):
     if args.lang is not None:
         lang_target = args.lang
     if args.process is not None:
-        max_process = args.process
+        max_process = args.process if args.process >= 1 else 2
 
     return 'input_dir', output_dir, lang_target, max_process
 
@@ -269,7 +292,7 @@ if __name__ == '__main__':
             '\n1.仅输出官方中英文语言文件  2.仅输出资源包中文和英文语言文件' +
             '\n3.资源包替换官方中文' +
             '\nq.退出\n' +
-            '-' * 45)
+            '-' * 45, end='')
         # choose select
         pType = input('\r\n\033[1mInput your select:\033[0m  ')
         if pType == 'q':
@@ -311,6 +334,6 @@ if __name__ == '__main__':
             helper.mix_language_files(i)
             helper.sort_files(i)
             count += 1
-        print(f'\n处理完成,共 \033[32m{count}\033[0m 个项目')
-    print('程序已退出,窗口将在5秒后关闭')
-    sleep(5)
+        print(f'\n\033[1;32m处理完成,共\033[0m \033[33m{count}\033[0m \033[1;32m个项目\033[0m')
+    print('程序已退出,窗口将在3秒后关闭')
+    sleep(3)
