@@ -1,5 +1,6 @@
 ﻿import argparse
 import json
+import multiprocessing
 import os
 import re
 import shutil
@@ -295,6 +296,7 @@ def initialization_params(args):
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     arg = parsers.parse_args()
     inputDir, outputDir, langTarget, maxProcess = initialization_params(arg)
     # create path
