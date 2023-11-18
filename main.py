@@ -38,7 +38,7 @@ class LangTransHelper:
         self.lang = trans
 
     # read zip and write them into a file
-    def _zip_reader(self, target, file, mod_id):
+    def _zip_reader(self, target: zipfile.ZipFile, file: str, mod_id: str):
         if file == f'assets/{mod_id}/lang/en_us.json':
             byte = target.read(file)
             with open(f'{self.output_dir}/has_trans/{mod_id}/en_us.json', 'wb') as f:
@@ -49,11 +49,11 @@ class LangTransHelper:
                 f.write(byte)
 
     # extract lang files from jar(zip)
-    def extract_mod_lang(self, zip_file):
+    def extract_mod_langs(self, zip_file):
         """
         Extract lang files from the mod jar (compress file)
 
-        zip_file is a string of compress file's name
+        Zip_file is a string of compress file's name
         """
         # semaphore
         try:
@@ -132,9 +132,10 @@ class LangTransHelper:
         :param each_mod:
         :return:
 
-        Read_resource_pack_lang's part. TO make main function more clean
+        Read_resource_pack_lang's part.
+        TO make the main function cleaner
         """
-        # split path to get folder name
+        # split the path to get folder name
         mod_id = each_mod.split('\\')[-1]
         try:
             if not os.access(f'{each_mod}/lang/{self.lang}.json', os.R_OK):
@@ -157,7 +158,7 @@ class LangTransHelper:
         os.rename(f'{self.output_dir}/has_trans', f'{self.output_dir}/temp')
         # for mods
         for each_pack in first_list:
-            mod_id = self.extract_mod_lang(each_pack)
+            mod_id = self.extract_mod_langs(each_pack)
             try:
                 # load as json
                 origin = open(f'{self.output_dir}/has_trans/{mod_id}/{self.lang}.json', 'rb')
@@ -185,7 +186,7 @@ class LangTransHelper:
             en = True
         if os.access(dir_name + f'/{self.lang}.json', os.R_OK):
             zh = True
-        # create sort path
+        # create the sort path
         if not os.access(f'{self.output_dir}/need_{self.lang}/', os.W_OK):
             os.makedirs(f'{self.output_dir}/need_{self.lang}/')
         if not os.access(f'{self.output_dir}/no_en_us/', os.W_OK):
@@ -300,10 +301,10 @@ if __name__ == '__main__':
     arg = parsers.parse_args()
     inputDir, outputDir, langTarget, maxProcess = initialization_params(arg)
     # create path
-    if not os.path.exists('input/mods'):
-        os.makedirs('input/mods')
-    if not os.path.exists('input/resource'):
-        os.makedirs('input/resource')
+    if not os.path.exists('main/input/mods'):
+        os.makedirs('main/input/mods')
+    if not os.path.exists('main/input/resource'):
+        os.makedirs('main/input/resource')
     if not os.access(outputDir, os.R_OK):
         os.mkdir(outputDir)
     # setting
@@ -316,31 +317,35 @@ if __name__ == '__main__':
         print(
             '-' * 45 +
             '\n1.仅输出官方中英文语言文件  2.仅输出资源包中文和英文语言文件' +
-            '\n3.资源包替换官方中文' +
+            '\n3.资源包替换官方中文  4. 输出Mods Id' +
             '\nq.退出\n' +
             '-' * 45, end='')
+
         # choose select
         pType = input('\r\n\033[1mInput your select:\033[0m  ')
-        if pType == '':
+        if not pType:
             print('未选择')
             continue
         if pType.lower() == 'q':
             break
+
         # Does mix the language
         if input('\033[1m是否将语言混合(y/n):\033[0m  ') == 'y':
             helper.langMix = True
         else:
             helper.langMix = False
         print('')
+
         # clean dir trees
         # input output direction
         shutil.rmtree(outputDir + '/', ignore_errors=True)
+
         # select
         pool = ProcessPoolExecutor(max_workers=maxProcess)
         start = time.perf_counter()
         if pType == '1':
             for i in helper.scaner_file('input/mods'):
-                pool.submit(helper.extract_mod_lang, i)
+                pool.submit(helper.extract_mod_langs, i)
         elif pType == '2':
             for i in helper.scaner_file('input/resource'):
                 pool.submit(helper.read_resource_pack_lang, i)
@@ -354,9 +359,9 @@ if __name__ == '__main__':
             continue
 
         pool.shutdown(wait=True)
-        # select three temp folder remove
+        # select three temp folders remove
         shutil.rmtree(f'{outputDir}/temp', ignore_errors=True)
-        # check result all right
+        # check the result all right
         if not os.access(f'{outputDir}/has_trans/', os.W_OK):
             print('\033[31m程序或许未正常运行,请检查输入输出文件夹是否正常\033[0m')
             continue

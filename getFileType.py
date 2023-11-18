@@ -50,6 +50,3 @@ def get_filetype(filename):
         return type_dict[result[0]]
     else:
         return 'unknown'
-
-
-
