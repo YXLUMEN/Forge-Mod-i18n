@@ -25,3 +25,12 @@ def scaner_file_gen(url: str | list | tuple):
             print('\033[33m目录为空\033[0m -> ' + each)
         for f in files:
             yield os.path.join(each, f)
+
+
+def selection(tips: str, option=('y', 'n'), warning='\033[33m无此选项\033[0m'):
+    while True:
+        select = input(tips)
+        if select.lower() in option:
+            return select
+        print(warning)
+        continue

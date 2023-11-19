@@ -60,7 +60,8 @@ def output_resource_pack_translation(target_lang):
 
 def replace_official_with_resource_pack(target_lang):
     output_resource_pack_translation(target_lang)
-    os.rename('output/temp', 'output/re_temp')
+    if os.path.exists('output/temp'):
+        os.rename('output/temp', 'output/re_temp')
     output_official_translation(target_lang)
     for mod_path in scaner_file_gen('output/temp'):
         mod_id = mod_path.split('\\')[-1]
