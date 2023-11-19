@@ -14,9 +14,6 @@ def main(select_mode: str, select_target_lang):
             output_mode_implementation.replace_official_with_resource_pack(select_target_lang)
         elif select_mode == '4':
             output_mode_implementation.output_mod_id()
-        else:
-            print('无此选项!')
-            return
     except Exception as e:
         print(e)
 
@@ -38,26 +35,30 @@ if __name__ == '__main__':
             '\n-----',
             end='')
         selectMode = input('\n\r\033[1m选择功能:\033[0m ')
-
         if selectMode.lower() == 'q':
-            os.system('pause')
-            print('程序退出.')
             break
-        selectTargetLang = input('选择目标语言,例如 zh_cn: ')
+        if selectMode not in ('1', '2', '3', '4'):
+            print('\033[32m无此选项\033[0m')
+            continue
+
+        selectTargetLang = input('\033[34m选择目标语言,例如 zh_cn:\033[0m ')
         if selectTargetLang == '':
             selectTargetLang = 'zh_cn'
+        print(f'\033[32m当前目标语言: {selectTargetLang}\033[0m')
 
         shutil.rmtree('output/', ignore_errors=True)
         main(selectMode, selectTargetLang)
 
         while True:
-            select = input('是否将默认语言与目标语言混合? (y/n): ')
+            select = input('\033[1m是否将默认语言与目标语言混合? (y/n):\033[0m ')
             if select == 'y':
                 output_mode_implementation.mix_lang()
                 break
             elif select == 'n':
                 break
-            print('无此选项')
+            print('\033[32m无此选项\033[0m')
             continue
 
         output_mode_implementation.sort_files()
+    os.system('pause')
+    print('程序退出.')

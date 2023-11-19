@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import zipfile
 
 from file_process import FileProcess
 from utilities import scaner_file_gen
@@ -23,8 +24,7 @@ del count
 def output_official_translation(target_lang):
     helper = FileProcess(target_language=target_lang)
     for file_path in scaner_file_gen('input/mods'):
-        helper.alter_zip_object(file_path)
-        if not helper.verify_mod():
+        if not helper.verify_mod(file_path):
             continue
         for i in helper.current_zip_object.namelist():
             helper.write_file(i)
@@ -32,20 +32,60 @@ def output_official_translation(target_lang):
 
 def output_resource_pack_translation(target_lang):
     helper = FileProcess(target_language=target_lang)
-    ...
+    for file_path in scaner_file_gen('input/resources'):
+        print(f'当前资源包:{file_path}')
+        # 如果资源包为压缩文件,则调用 verify_resource_pack_zip()
+        if zipfile.is_zipfile(file_path):
+            for i in helper.verify_resource_pack_zip(file_path):
+                helper.write_file(i)
+        # 如果资源包为文件夹,调用verify_resource_pack_dir(),并在此函数中处理文件
+        elif os.path.isdir(file_path):
+            if not helper.verify_resource_pack_dir(file_path):
+                continue
+            for mod_path in scaner_file_gen(f'{file_path}/assets'):
+                mod_id = mod_path.split('\\')[-1]
+                if not os.access(f'{mod_path}/lang/{target_lang}.json', os.R_OK):
+                    continue
+                    # create the output path
+                if not os.access(f'output/temp/{mod_id}', os.W_OK):
+                    os.makedirs(f'output/temp/{mod_id}')
+                shutil.copy(
+                    # abspath() used in here just for a better exception output XD
+                    os.path.abspath(f'{mod_path}/lang/{target_lang}.json'),
+                    f'output/temp/{mod_id}/{target_lang}.json')
+
+        else:
+            print('\033[31m未解析的资源包\033[0m -> ' + file_path.split('\\')[-1])
 
 
 def replace_official_with_resource_pack(target_lang):
-    helper = FileProcess(target_language=target_lang)
-    ...
+    output_resource_pack_translation(target_lang)
+    os.rename('output/temp', 'output/re_temp')
+    output_official_translation(target_lang)
+    for mod_path in scaner_file_gen('output/temp'):
+        mod_id = mod_path.split('\\')[-1]
+        try:
+            official_file = open(f'output/temp/{mod_id}/{target_lang}.json', 'rb')
+            official_file = json.load(official_file)
+            resource_file = open(f'output/re_temp/{mod_id}/{target_lang}.json', 'rb')
+            resource_file = json.load(resource_file)
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            print(f'官方翻译替换 \033[31m出现错误:\033[0m {e}')
+            continue
+        # 存在的资源包翻译将替换官方翻译
+        official_file.update(resource_file)
+        latest = open(f'output/temp/{mod_id}/{target_lang}.json', 'w', encoding='utf-8')
+        json.dump(official_file, latest, ensure_ascii=False, indent=4)
+    shutil.rmtree('output/re_temp', ignore_errors=True)
 
 
 def output_mod_id():
     helper = FileProcess()
     f = open('output/ModList.txt', 'w+', encoding='utf-8')
     for file_path in scaner_file_gen('input/mods'):
-        helper.alter_zip_object(file_path)
-        f.write(f'{helper.verify_mod()}\n')
+        f.write(f'{helper.verify_mod(file_path)}\n')
 
 
 def mix_lang(target_lang='zh_cn', default_lang='en_us'):
@@ -57,7 +97,7 @@ def mix_lang(target_lang='zh_cn', default_lang='en_us'):
             target_lang_file = open(f'{mod_path}/{target_lang}.json', 'rb')
             target_lang_file = json.load(target_lang_file)
         except FileNotFoundError as e:
-            print(f'mixLang: 处理的 -> ' + mod_path.split('/')[-1] + ' 没有: ' + str(e).split('/')[-1])
+            print(f'mixLang: 处理的 -> ' + mod_path.split('\\')[-1] + ' 没有: ' + str(e).split('/')[-1])
             continue
         except json.decoder.JSONDecodeError:
             print('\033[33m使用json5处理文件\033[0m -> ' + mod_path.split('/')[-1])
@@ -106,5 +146,4 @@ def sort_files(default='en_us', target='zh_cn'):
         else:
             shutil.move(each_file, 'output/withoutLang/')
 
-    if os.access('output/temp', os.W_OK):
-        shutil.rmtree('output/temp', ignore_errors=True)
+    shutil.rmtree('output/temp', ignore_errors=True)
