@@ -21,8 +21,11 @@ if count <= 0:
 del count
 
 
-def output_official_translation(target_lang):
-    helper = FileProcess(target_language=target_lang)
+# MAX_THREAD = 2
+
+
+def output_official_translation(target_lang: str, default_lang: str, output_dir: str):
+    helper = FileProcess(target_language=target_lang, default_language=default_lang, output_dir=output_dir)
     for file_path in scaner_file_gen('input/mods'):
         if not helper.verify_mod(file_path):
             continue
@@ -30,8 +33,8 @@ def output_official_translation(target_lang):
             helper.write_file(i)
 
 
-def output_resource_pack_translation(target_lang):
-    helper = FileProcess(target_language=target_lang)
+def output_resource_pack_translation(target_lang: str, default_lang: str, output_dir: str):
+    helper = FileProcess(target_language=target_lang, default_language=default_lang, output_dir=output_dir)
     for file_path in scaner_file_gen('input/resources'):
         print(f'当前资源包:{file_path}')
         # 如果资源包为压缩文件,则调用 verify_resource_pack_zip()
@@ -47,28 +50,28 @@ def output_resource_pack_translation(target_lang):
                 if not os.access(f'{mod_path}/lang/{target_lang}.json', os.R_OK):
                     continue
                     # create the output path
-                if not os.access(f'output/temp/{mod_id}', os.W_OK):
-                    os.makedirs(f'output/temp/{mod_id}')
+                if not os.access(f'{output_dir}/temp/{mod_id}', os.W_OK):
+                    os.makedirs(f'{output_dir}/temp/{mod_id}')
                 shutil.copy(
                     # abspath() used in here just for a better exception output XD
                     os.path.abspath(f'{mod_path}/lang/{target_lang}.json'),
-                    f'output/temp/{mod_id}/{target_lang}.json')
+                    f'{output_dir}/temp/{mod_id}/{target_lang}.json')
 
         else:
             print('\033[31m未解析的资源包\033[0m -> ' + file_path.split('\\')[-1])
 
 
-def replace_official_with_resource_pack(target_lang):
-    output_resource_pack_translation(target_lang)
-    if os.path.exists('output/temp'):
-        os.rename('output/temp', 'output/re_temp')
-    output_official_translation(target_lang)
-    for mod_path in scaner_file_gen('output/temp'):
+def replace_official_with_resource_pack(target_lang: str, default_lang: str, output_dir: str):
+    output_resource_pack_translation(target_lang, default_lang, output_dir)
+    if os.path.exists(f'{output_dir}/temp'):
+        os.rename(f'{output_dir}/temp', f'{output_dir}/re_temp')
+    output_official_translation(target_lang, default_lang, output_dir)
+    for mod_path in scaner_file_gen(f'{output_dir}/temp'):
         mod_id = mod_path.split('\\')[-1]
         try:
-            official_file = open(f'output/temp/{mod_id}/{target_lang}.json', 'rb')
+            official_file = open(f'{output_dir}/temp/{mod_id}/{target_lang}.json', 'rb')
             official_file = json.load(official_file)
-            resource_file = open(f'output/re_temp/{mod_id}/{target_lang}.json', 'rb')
+            resource_file = open(f'{output_dir}/re_temp/{mod_id}/{target_lang}.json', 'rb')
             resource_file = json.load(resource_file)
         except FileNotFoundError:
             continue
@@ -77,20 +80,21 @@ def replace_official_with_resource_pack(target_lang):
             continue
         # 存在的资源包翻译将替换官方翻译
         official_file.update(resource_file)
-        latest = open(f'output/temp/{mod_id}/{target_lang}.json', 'w', encoding='utf-8')
+        latest = open(f'{output_dir}/temp/{mod_id}/{target_lang}.json', 'w', encoding='utf-8')
         json.dump(official_file, latest, ensure_ascii=False, indent=4)
-    shutil.rmtree('output/re_temp', ignore_errors=True)
+    shutil.rmtree(f'{output_dir}/re_temp', ignore_errors=True)
 
 
-def output_mod_id():
+def output_mod_id(output_dir):
     helper = FileProcess()
-    f = open('output/ModList.txt', 'w+', encoding='utf-8')
+    f = open(f'{output_dir}/ModList.txt', 'w+', encoding='utf-8')
     for file_path in scaner_file_gen('input/mods'):
         f.write(f'{helper.verify_mod(file_path)}\n')
+    f.close()
 
 
-def mix_lang(target_lang='zh_cn', default_lang='en_us'):
-    for mod_path in scaner_file_gen('output/temp'):
+def mix_lang(target_lang: str, default_lang: str, output_dir: str):
+    for mod_path in scaner_file_gen(f'{output_dir}/temp'):
         # mod_id = i.split('\\')[-1]
         try:
             default_lang_file = open(f'{mod_path}/{default_lang}.json', 'rb')
@@ -122,29 +126,30 @@ def mix_lang(target_lang='zh_cn', default_lang='en_us'):
         default_lang_file.update(target_lang_file)
         mix_file = open(f'{mod_path}/mix.json', 'w', encoding='utf-8')
         json.dump(default_lang_file, mix_file, ensure_ascii=False, indent=4)
+        mix_file.close()
 
 
-def sort_files(default='en_us', target='zh_cn'):
-    if not os.path.exists('output/hasTranslation'):
-        os.makedirs('output/hasTranslation')
-    if not os.path.exists('output/needTranslating'):
-        os.makedirs('output/needTranslating')
-    if not os.path.exists('output/withoutEnglishLang'):
-        os.makedirs('output/withoutEnglishLang')
-    if not os.path.exists('output/withoutLang'):
-        os.makedirs('output/withoutLang')
+def sort_files(target_lang: str, default_lang: str, output_dir: str):
+    if not os.path.exists(f'{output_dir}/hasTranslation'):
+        os.makedirs(f'{output_dir}/hasTranslation')
+    if not os.path.exists(f'{output_dir}/needTranslating'):
+        os.makedirs(f'{output_dir}/needTranslating')
+    if not os.path.exists(f'{output_dir}/withoutEnglishLang'):
+        os.makedirs(f'{output_dir}/withoutEnglishLang')
+    if not os.path.exists(f'{output_dir}/withoutLang'):
+        os.makedirs(f'{output_dir}/withoutLang')
 
-    for each_file in scaner_file_gen('output/temp/'):
-        default_lang = f'{each_file}/{default}.json'
-        target_lang = f'{each_file}/{target}.json'
-        if os.access(default_lang, os.R_OK):
-            if os.access(target_lang, os.R_OK):
-                shutil.move(each_file, 'output/hasTranslation/')
+    for each_file in scaner_file_gen(f'{output_dir}/temp/'):
+        default_lang_file = f'{each_file}/{default_lang}.json'
+        target_lang_file = f'{each_file}/{target_lang}.json'
+        if os.access(default_lang_file, os.R_OK):
+            if os.access(target_lang_file, os.R_OK):
+                shutil.move(each_file, f'{output_dir}/hasTranslation/')
             else:
-                shutil.move(each_file, 'output/needTranslating/')
-        elif os.access(target_lang, os.R_OK):
-            shutil.move(each_file, 'output/withoutEnglishLang/')
+                shutil.move(each_file, f'{output_dir}/needTranslating/')
+        elif os.access(target_lang_file, os.R_OK):
+            shutil.move(each_file, f'{output_dir}/withoutEnglishLang/')
         else:
-            shutil.move(each_file, 'output/withoutLang/')
+            shutil.move(each_file, f'{output_dir}/withoutLang/')
 
-    shutil.rmtree('output/temp', ignore_errors=True)
+    shutil.rmtree(f'{output_dir}/temp', ignore_errors=True)
