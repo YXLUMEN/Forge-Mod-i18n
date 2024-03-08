@@ -8,6 +8,7 @@ from utilities import selection
 
 
 def main(select_mode):
+    # Load conf
     try:
         conf = configuration.read_conf()
     except FileNotFoundError:
@@ -29,6 +30,7 @@ def main(select_mode):
     target_lang = conf['target_lang']
     output_dir = conf['output_dir']
 
+    # 清空输出
     shutil.rmtree(output_dir, ignore_errors=True)
     os.makedirs(output_dir)
 
@@ -56,6 +58,7 @@ def main(select_mode):
 
 if __name__ == '__main__':
     while True:
+        # 不在这里创建文件夹会出现怪问题,也许是更新问题
         if not os.path.exists('input/mods'):
             os.makedirs('input/mods')
         if not os.path.exists('input/resources'):

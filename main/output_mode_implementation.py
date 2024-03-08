@@ -130,12 +130,16 @@ def mix_lang(target_lang: str, default_lang: str, output_dir: str):
 
 
 def sort_files(target_lang: str, default_lang: str, output_dir: str):
+    # Translated
     if not os.path.exists(f'{output_dir}/hasTranslation'):
         os.makedirs(f'{output_dir}/hasTranslation')
+    # Need translate
     if not os.path.exists(f'{output_dir}/needTranslating'):
         os.makedirs(f'{output_dir}/needTranslating')
+    # Without default lang files
     if not os.path.exists(f'{output_dir}/withoutEnglishLang'):
         os.makedirs(f'{output_dir}/withoutEnglishLang')
+    # Without any lang files
     if not os.path.exists(f'{output_dir}/withoutLang'):
         os.makedirs(f'{output_dir}/withoutLang')
 
